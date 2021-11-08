@@ -12,7 +12,6 @@ import org.springframework.graphql.data.method.annotation.QueryMapping;
 import org.springframework.graphql.data.method.annotation.SchemaMapping;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.rsocket.RSocketRequester;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -25,16 +24,38 @@ import java.util.List;
 
 import static org.springframework.web.reactive.function.server.RouterFunctions.route;
 
+
 @SpringBootApplication
 public class EdgeApplication {
+
+	private final Log log = LogFactory.getLog(getClass());
+
+	private final URI ordersUri;
+	private final URI customersUri;
+
+	EdgeApplication(
+		@Value("${crm.orders-uri}") URI ordersUri,
+		@Value("${crm.customers-uri}") URI customersUri) {
+		this.ordersUri = ordersUri;
+		this.customersUri = customersUri;
+
+		log.info("the customers service URI is " + this.customersUri);
+		log.info("the orders service URI is " + this.ordersUri);
+	}
 
 	public static void main(String[] args) {
 		SpringApplication.run(EdgeApplication.class, args);
 	}
 
+
+	@Bean
+	CrmClient crmClient(WebClient http, RSocketRequester rSocketRequester) {
+		return new CrmClient(customersUri, http, rSocketRequester);
+	}
+
 	@Bean
 	RSocketRequester rSocketRequester(
-		@Value("${crm.orders-uri}") URI ordersUri, RSocketRequester.Builder builder) {
+		RSocketRequester.Builder builder) {
 		return builder.tcp(ordersUri.getHost(), ordersUri.getPort());
 	}
 
@@ -45,7 +66,6 @@ public class EdgeApplication {
 
 	@Bean
 	RouteLocator gateway(
-		@Value("${crm.customers-uri}") URI customersUri,
 		RouteLocatorBuilder rlb) {
 		return rlb
 			.routes()
@@ -64,6 +84,8 @@ public class EdgeApplication {
 @Controller
 class CrmGraphqlController {
 
+	private final CrmClient crm;
+
 	CrmGraphqlController(CrmClient crm) {
 		this.crm = crm;
 	}
@@ -77,11 +99,9 @@ class CrmGraphqlController {
 	Flux<Order> orders(Customer customer) {
 		return this.crm.getOrdersFor(customer.id());
 	}
-
-	private final CrmClient crm;
 }
 
-@Component
+
 class CrmClient {
 
 
@@ -91,16 +111,14 @@ class CrmClient {
 
 	private final URI customersUri;
 
-	private final Log log = LogFactory.getLog(getClass());
 
 	CrmClient(
-		@Value("${crm.customers-uri}") URI customersUri,
-		WebClient http, RSocketRequester rSocket) {
+		URI customersUri, WebClient http, RSocketRequester rSocket) {
 		this.http = http;
 		this.rSocket = rSocket;
 		this.customersUri = URI.create(customersUri.getScheme() + "://"
 			+ customersUri.getHost() + ":" + customersUri.getPort() + "/customers");
-		log.info("the customers service is " + this.customersUri);
+
 
 	}
 
